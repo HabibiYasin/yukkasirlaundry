@@ -1,4 +1,4 @@
-﻿const { readFileSync } = require("node:fs");
+const { readFileSync } = require("node:fs");
 const { test, before, after } = require("node:test");
 const {
   initializeTestEnvironment,
@@ -94,3 +94,15 @@ test("client cannot forge membership", async () =>
       { memberIds: ["staff", "outsider"] },
     ),
   ));
+
+test("members cannot forge transaction totals or payment history", async () => {
+  const db = env.authenticatedContext("staff").firestore();
+  await assertFails(
+    setDoc(doc(db, "stores/shop/orders/fake"), { total: 1, paid: 1 }),
+  );
+  await assertFails(
+    setDoc(doc(db, "stores/shop/orders/fake/events/payment"), {
+      amount: 100000,
+    }),
+  );
+});

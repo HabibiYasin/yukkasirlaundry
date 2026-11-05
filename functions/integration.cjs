@@ -1,4 +1,4 @@
-﻿const assert = require("node:assert/strict");
+const assert = require("node:assert/strict");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore } = require("firebase-admin/firestore");
@@ -88,6 +88,173 @@ async function call(name, token, data) {
   const s = (await getFirestore().doc(`stores/${shop.id}`).get()).data();
   assert.ok(s.memberIds.includes(staff.localId));
   assert.equal((await call("syncMemberships", verified.idToken, {})).linked, 0);
+
+  const database = getFirestore();
+  await database
+    .doc(`stores/${shop.id}/customers/customer1`)
+    .set({ name: "Pak Obi", phone: "081234", address: "" });
+  const values = [
+    "Cuci Lipat 2 Jam",
+    "KG",
+    0,
+    2,
+    7000,
+    3,
+    0,
+    "",
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+  ];
+  await database.doc(`stores/${shop.id}/services/twohours`).set({ values });
+  await database
+    .doc(`stores/${shop.id}/services/sixhours`)
+    .set({
+      values: ["Cuci Lipat 6 Jam", "KG", 0, 6, 6000, ...values.slice(5)],
+    });
+  const payload = {
+    storeId: shop.id,
+    requestId: "video-order",
+    customerId: "customer1",
+    lines: [
+      { serviceId: "twohours", quantity: 3, expectedPrice: 7000 },
+      { serviceId: "sixhours", quantity: 3, expectedPrice: 6000 },
+    ],
+    paymentType: "pickup",
+    note: "Pisahkan pakaian putih",
+  };
+  const order = await call("createOrder", verified.idToken, payload);
+  assert.equal(
+    (await call("createOrder", verified.idToken, payload)).id,
+    order.id,
+  );
+  const ref = database.doc(`stores/${shop.id}/orders/${order.id}`);
+  let data = (await ref.get()).data();
+  assert.equal(data.total, 39000);
+  assert.equal(data.paid, 0);
+  assert.equal(data.balance, 39000);
+  assert.equal(data.dueAt.toMillis() - data.createdAt.toMillis(), 6 * 3600000);
+  await assert.rejects(() =>
+    call("createOrder", verified.idToken, {
+      ...payload,
+      requestId: "bad-min",
+      lines: [{ serviceId: "twohours", quantity: 1, expectedPrice: 7000 }],
+    }),
+  );
+  await assert.rejects(() =>
+    call("createOrder", verified.idToken, {
+      ...payload,
+      requestId: "bad-price",
+      lines: [{ serviceId: "twohours", quantity: 3, expectedPrice: 1 }],
+    }),
+  );
+  const outsider = await account("outsider@example.com");
+  await assert.rejects(() =>
+    call("createOrder", outsider.idToken, {
+      ...payload,
+      requestId: "bad-member",
+    }),
+  );
+  const update = { storeId: shop.id, orderId: order.id };
+  await assert.rejects(() =>
+    call("updateOrder", verified.idToken, {
+      ...update,
+      requestId: "skip-status",
+      action: "status",
+      nextStatus: "Diambil",
+    }),
+  );
+  await call("updateOrder", verified.idToken, {
+    ...update,
+    requestId: "status1",
+    action: "status",
+    nextStatus: "Diproses",
+  });
+  await call("updateOrder", verified.idToken, {
+    ...update,
+    requestId: "status2",
+    action: "status",
+    nextStatus: "Siap diambil",
+  });
+  await assert.rejects(() =>
+    call("updateOrder", verified.idToken, {
+      ...update,
+      requestId: "unpaid-pickup",
+      action: "status",
+      nextStatus: "Diambil",
+    }),
+  );
+  await assert.rejects(() =>
+    call("updateOrder", verified.idToken, {
+      ...update,
+      requestId: "overpay",
+      action: "pay",
+      amount: 40000,
+      method: "Tunai",
+    }),
+  );
+  const payment = {
+    ...update,
+    requestId: "payment1",
+    action: "pay",
+    amount: 10000,
+    method: "Tunai",
+  };
+  await call("updateOrder", verified.idToken, payment);
+  await call("updateOrder", verified.idToken, payment);
+  data = (await ref.get()).data();
+  assert.equal(data.paid, 10000);
+  assert.equal(data.balance, 29000);
+  await call("updateOrder", verified.idToken, {
+    ...update,
+    requestId: "payment2",
+    action: "pay",
+    amount: 29000,
+    method: "Transfer",
+  });
+  await call("updateOrder", verified.idToken, {
+    ...update,
+    requestId: "status3",
+    action: "status",
+    nextStatus: "Diambil",
+  });
+  data = (await ref.get()).data();
+  assert.equal(data.status, "Diambil");
+  assert.equal(data.paymentStatus, "Lunas");
+  const dp = await call("createOrder", verified.idToken, {
+    ...payload,
+    requestId: "dp-order",
+    paymentType: "deposit",
+    paid: 15000,
+    paymentMethod: "Tunai",
+  });
+  assert.equal(
+    (await database.doc(`stores/${shop.id}/orders/${dp.id}`).get()).data()
+      .balance,
+    24000,
+  );
+  const paid = await call("createOrder", verified.idToken, {
+    ...payload,
+    requestId: "paid-order",
+    paymentType: "paid",
+    paymentMethod: "Transfer",
+  });
+  assert.equal(
+    (await database.doc(`stores/${shop.id}/orders/${paid.id}`).get()).data()
+      .balance,
+    0,
+  );
+  console.log(
+    "PASS: video example Rp39.000, authoritative price, minimum order, membership, three payment types, payment idempotency, status transitions, paid pickup.",
+  );
   console.log(
     "PASS: registration, duplicate confirmation, owner authorization, verified invitations, membership synchronization, idempotency.",
   );

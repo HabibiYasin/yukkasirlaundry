@@ -84,16 +84,14 @@ exports.inviteEmployee = onCall(async (r) => {
   const email = clean(r.data.email).toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
     throw new HttpsError("invalid-argument", "Email tidak valid.");
-  await db
-    .doc(`invitations/${hash(storeId + ":" + email)}`)
-    .set({
-      storeId,
-      email,
-      name: clean(r.data.name),
-      createdBy: uid,
-      status: "pending",
-      createdAt: FieldValue.serverTimestamp(),
-    });
+  await db.doc(`invitations/${hash(storeId + ":" + email)}`).set({
+    storeId,
+    email,
+    name: clean(r.data.name),
+    createdBy: uid,
+    status: "pending",
+    createdAt: FieldValue.serverTimestamp(),
+  });
   return { ok: true };
 });
 exports.syncMemberships = onCall(async (r) => {
@@ -128,3 +126,5 @@ exports.syncMemberships = onCall(async (r) => {
   }
   return { linked };
 });
+
+Object.assign(exports, require("./orders"));

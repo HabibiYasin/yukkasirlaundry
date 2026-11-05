@@ -1,3 +1,5 @@
+import 'orders.dart';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
@@ -336,7 +338,12 @@ class _HomeShellState extends State<HomeShell> {
       Row(
         children: [
           Expanded(
-            child: action(c, 'Buat\nTransaksi', Icons.add_circle_outline),
+            child: action(
+              c,
+              'Buat\nTransaksi',
+              Icons.add_circle_outline,
+              store?.id,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -344,6 +351,7 @@ class _HomeShellState extends State<HomeShell> {
               c,
               'Proses\nTransaksi',
               Icons.local_laundry_service_outlined,
+              store?.id,
             ),
           ),
         ],
@@ -377,43 +385,41 @@ class _HomeShellState extends State<HomeShell> {
       ],
       const SizedBox(height: 20),
       const Text(
-        'Transaksi akan diaktifkan setelah alur operasional ditentukan.',
+        'Buat pesanan, pantau pengerjaan, dan catat pembayaran per toko.',
         style: TextStyle(color: Colors.grey),
       ),
     ],
   );
-  Widget action(BuildContext c, String title, IconData icon) => Card(
-    child: InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () => Navigator.push(
-        c,
-        MaterialPageRoute(
-          builder: (_) => Scaffold(
-            appBar: AppBar(title: Text(title.replaceAll('\n', ' '))),
-            body: const Center(
-              child: Padding(
-                padding: EdgeInsets.all(28),
-                child: Text(
-                  'Alur transaksi belum diaktifkan.\nMenunggu flow end-to-end untuk pencatatan, proses, dan pembayaran.',
-                  textAlign: TextAlign.center,
-                ),
+  Widget action(BuildContext c, String title, IconData icon, String? store) =>
+      Card(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            if (store == null) {
+              message(c, 'Pilih atau tambahkan toko terlebih dahulu.');
+              return;
+            }
+            Navigator.push(
+              c,
+              MaterialPageRoute(
+                builder: (_) => title.startsWith('Buat')
+                    ? CreateOrderPage(store: store)
+                    : OrdersPage(store: store),
               ),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              children: [
+                Icon(icon, size: 44, color: const Color(0xff24649a)),
+                const SizedBox(height: 12),
+                Text(title, textAlign: TextAlign.center),
+              ],
             ),
           ),
         ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(22),
-        child: Column(
-          children: [
-            Icon(icon, size: 44, color: const Color(0xff24649a)),
-            const SizedBox(height: 12),
-            Text(title, textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    ),
-  );
+      );
   Widget storeList(
     BuildContext c,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> stores,

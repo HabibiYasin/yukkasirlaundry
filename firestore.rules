@@ -11,6 +11,7 @@ service cloud.firestore {
   match /stores/{sid} {
    allow read: if signed() && request.auth.uid in resource.data.memberIds;
    allow update: if owner(sid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','phone','city','address']) && request.resource.data.name == resource.data.name;
+   match /orders/{id} {allow read: if member(sid); match /events/{eventId} {allow read: if member(sid);}}
    match /members/{id} {allow read: if member(sid);}
    match /services/{id} {allow read: if member(sid); allow create,update: if owner(sid) && request.resource.data.values is list && request.resource.data.values.size() == 19; allow delete: if owner(sid);}
    match /customers/{id} {allow read: if member(sid); allow create,update: if member(sid) && request.resource.data.keys().hasOnly(['name','phone','address']) && request.resource.data.name is string && request.resource.data.name.size()>0 && request.resource.data.phone is string; allow delete: if owner(sid);}
