@@ -1,103 +1,79 @@
-# Yuk Kasir
+# Yuk Kasir Laundry
 
-Aplikasi mobile Flutter untuk laundry. Firebase project: `yuk-kasir-laundry`.
+Aplikasi Flutter Android/iOS dengan Firebase Authentication dan Cloud Firestore langsung pada project `yuk-kasir-laundry`. Tidak menggunakan Cloud Functions; tidak perlu mengaktifkan Blaze untuk fitur yang ada. Pemakaian tetap mengikuti kuota paket Spark.
 
-## Fitur tahap awal
+## Menjalankan ke cloud (default)
 
-- Masuk/daftar email dan Google, pemilihan Owner atau Karyawan.
-- Profil: ID Firebase Auth, nama, email, nomor HP, role, premium, daftar ID toko.
-- Navigasi Beranda, Konsumen, Toko, Pengaturan.
-- Banyak toko, detail toko, konfirmasi nama toko yang sudah pernah terdaftar.
-- Undangan karyawan berdasarkan email terverifikasi. Login/sinkronisasi menghubungkan data toko owner.
-- Tambah/edit konsumen dan pencarian nama/nomor HP.
-- Tambah/edit layanan dengan seluruh 19 kolom Excel contoh; impor dan ekspor XLSX.
-- Edit profil, cetak halaman uji PDF melalui printer sistem, tentang, logout.
-- Transaksi: pilih/tambah konsumen, layanan dan kuantitas, keranjang, pembayaran lunas/DP/saat pengambilan, nota PDF dan berbagi nota teks.
-- Proses: Baru > Diproses > Siap diambil > Diambil; pembayaran terpisah, pelunasan wajib sebelum pengambilan; riwayat pembayaran/status.
-- Detail acuan video dan batas implementasi: [docs/transaction-flow.md](docs/transaction-flow.md).
+1. Pastikan Email/Password dan Google sudah Enabled di Firebase Console > Authentication.
+2. Buka emulator Android lewat Android Studio.
+3. Di VS Code, pilih **Yuk Kasir Laundry - Cloud (Spark)** pada Run and Debug, lalu F5.
 
-## Status Firebase
+Atau jalankan `flutter run` tanpa `USE_EMULATORS=true`. Firebase Emulator tidak perlu dinyalakan. Paket debug cloud: `build/app/outputs/flutter-apk/app-debug.apk`.
 
-Aplikasi Android dan iOS telah terdaftar. Firestore database dibuat oleh Firebase CLI di region default `nam5`, dan security rules telah dideploy. SHA-1 debug Android telah didaftarkan.
+Akun login tersimpan di Authentication. Setelah mengisi nama, nomor HP dan role lalu menekan **Mulai**, profil tersimpan di Firestore `users/{uid}`. Akun dan data yang dibuat di emulator sebelumnya tidak otomatis pindah ke cloud. Daftar kembali di cloud jika akun sebelumnya hanya ada di emulator.
 
-Cloud Functions BELUM dideploy: project masih Spark; deployment meminta Blaze. Penagihan tidak diubah sesuai permintaan pengguna. `completeProfile`, `createStore`, `inviteEmployee`, `syncMemberships`, `createOrder`, `updateOrder` memerlukan Functions sehingga alur tersebut hanya bisa digunakan di emulator sampai Functions dideploy.
+Firebase client configuration (`google-services.json`, `firebase_options.dart`) bukan admin credential. Jangan memasukkan service account, keystore, atau private key ke repository. Debug SHA-1 sudah didaftarkan; rilis memerlukan sertifikat release/Play App Signing. iOS tetap memerlukan macOS/Xcode dan konfigurasi Google URL scheme.
 
-Provider Email/Password dan Google harus diaktifkan pada Firebase Console > Authentication > Sign-in method. Google OAuth belum diverifikasi. Setelah mengaktifkan Google, jalankan ulang `flutterfire configure --project=yuk-kasir-laundry --platforms=android,ios` untuk mengambil konfigurasi OAuth terbaru. iOS juga memerlukan URL scheme REVERSED_CLIENT_ID dari GoogleService-Info.plist pada Info.plist, serta build melalui macOS/Xcode. Jangan menggunakan APK debug untuk rilis Play Store.
+## Fitur
 
-## Menjalankan lokal tanpa Blaze
+- Login/daftar email-password dan Google; profil Owner/Karyawan, nomor HP, status premium dan banyak toko.
+- Pembuatan toko dengan konfirmasi nama duplikat. Nama sama tidak memberikan akses ke toko lain.
+- Undangan karyawan berdasarkan email. Karyawan perlu memverifikasi email lalu login/sinkronkan untuk menghubungkan ke toko.
+- Daftar/edit layanan 19 kolom, impor-ekspor XLSX, konsumen dan pencarian.
+- Transaksi: konsumen > layanan/kuantitas > keranjang > lunas/DP/bayar saat pengambilan > nota.
+- Baru > Diproses > Siap diambil > Diambil; pengambilan mensyaratkan lunas.
+- Cetak PDF melalui printer sistem, berbagi nota teks, riwayat status/pembayaran.
+- Promo dan pajak tidak termasuk sesuai permintaan. Cetak label/ESC-POS belum tersedia.
 
-Prasyarat: Flutter, Node 22, Firebase CLI, Java 21+ untuk emulator. Instal dependency:
+## Validasi Firestore
+
+Semua penulisan aplikasi melewati Security Rules. Role/premium tidak dapat dinaikkan sendiri. Membership hanya dapat ditambah melalui undangan email terverifikasi. Harga, nama layanan, minimum, kuantitas, total, snapshot konsumen/toko dan pembayaran dicek rules terhadap data toko. Pembayaran dan histori harus ditulis atomik; request ID mencegah pengulangan pembayaran saat retry.
+
+Maksimal **4 baris layanan per transaksi** agar validasi harga seluruh baris tetap di bawah batas akses dokumen Security Rules. Layanan tambahan dicatat di transaksi berikutnya. Minimum reguler berlaku; DP pembayaran bukan minimum order deposit/saldo pelanggan. Harga dibulatkan per baris ke rupiah bulat. Estimasi mengikuti durasi terlama. Waktu perangkat harus akurat (toleransi waktu transaksi 5 menit).
+
+Operasi transaksi toko/undangan/pembayaran memerlukan internet. Impor maksimal 450 baris layanan per batch; data ditambahkan setelah seluruh baris valid. Premium hanya dapat diubah oleh admin melalui lingkungan tepercaya.
+
+## Struktur data
+
+- `users/{uid}`: id, name, email, phone, role, premium, storeIds, lastStoreId, createdAt.
+- `stores/{id}`: name, nameKey, duplicateConfirmed, phone, city, address, ownerId, memberIds, createdAt.
+- `stores/{id}/members/{uid}`: uid, name, email, role.
+- `stores/{id}/services/{id}`: values (19 kolom Excel).
+- `stores/{id}/customers/{id}`: name, phone, address.
+- `stores/{id}/orders/{id}`: snapshot dan total, paid, balance, status, paymentStatus, createdAt, dueAt, lastEventId.
+- `stores/{id}/orders/{id}/events/{requestId}`: histori immutable untuk pembuatan, pembayaran dan status.
+- `invitations/{hash}`: undangan/claim terverifikasi.
+- `storeNames/{hash}`: indeks nama untuk konfirmasi duplikat.
+
+Hash baru menggunakan SHA-256 Base64 URL-safe (termasuk padding). Data emulator lama tidak dimigrasikan. Nomor nota memakai ID dokumen unik, bukan urutan global.
+
+## Pengujian lokal opsional
+
+Mode lokal hanya untuk pengujian; tidak menjadi konfigurasi utama aplikasi. Java 21+ diperlukan untuk Firebase Emulator.
 
 ```powershell
 flutter pub get
-npm install --prefix functions
-firebase emulators:start --project yuk-kasir-laundry --only auth,firestore,functions
+flutter analyze
+flutter test
+npm install --prefix firestore_tests
+firebase emulators:exec --config firebase.spark-test.json --only firestore --project demo-yuk-spark "npm test --prefix firestore_tests"
 ```
 
-Terminal kedua, Android emulator:
+Tes Spark memakai SDK client terautentikasi dan Security Rules sungguhan, tanpa admin bypass untuk skenario transaksi. Suite mencakup pendaftaran, duplikat toko, invitation claim, penolakan eskalasi privilege, isolasi toko, 4 layanan, harga/total palsu, pembayaran atomik/idempoten, serta pelunasan sebelum pengambilan.
+
+Untuk mencoba UI memakai emulator lokal:
 
 ```powershell
+firebase emulators:start --only "auth,firestore" --project yuk-kasir-laundry
 flutter run --dart-define=USE_EMULATORS=true
 ```
 
-Untuk perangkat Android fisik pada jaringan yang sama:
+## Deploy aturan
 
 ```powershell
-flutter run --dart-define=USE_EMULATORS=true --dart-define=EMULATOR_HOST=IP_KOMPUTER
+firebase deploy --only firestore:rules --project yuk-kasir-laundry
 ```
 
-Gunakan email/password pada emulator. Link verifikasi email tampil di terminal Auth Emulator. Data emulator terpisah dari produksi. Google native memerlukan konfigurasi OAuth nyata.
+Tidak ada deploy Functions atau perubahan penagihan. Snapshot data lama tidak dihapus. Referensi: https://firebase.google.com/docs/firestore/security/rules-conditions dan https://firebase.google.com/docs/projects/billing/firebase-pricing-plans
 
-## Pengujian
-
-```powershell
-flutter analyze
-flutter test
-firebase emulators:exec --only firestore --project demo-yuk-kasir "npm test --prefix functions"
-flutter build apk --debug
-```
-
-Tes Excel menggunakan file contoh asli, menguji 19 kolom, harga tidak valid, dan round-trip ekspor/impor. Tes security rules memeriksa isolasi toko, perubahan layanan oleh owner, akses konsumen, serta penolakan eskalasi role/premium/keanggotaan.
-
-## Struktur Firestore
-
-- `users/{uid}`: id, name, email, phone, role, premium, storeIds, createdAt.
-- `stores/{storeId}`: name, phone, city, address, ownerId, memberIds, createdAt.
-- `stores/{storeId}/members/{uid}`: uid, name, email, role.
-- `stores/{storeId}/services/{id}`: values (19 nilai sesuai urutan header Excel).
-- `stores/{storeId}/customers/{id}`: name, phone, address.
-- `invitations/{hash}`: storeId, email, name, createdBy, status, uid setelah diterima.
-- `stores/{storeId}/orders/{id}`: snapshot toko/konsumen/layanan, total, paid, balance, status, paymentStatus, createdAt, dueAt, createdBy.
-- `stores/{storeId}/orders/{id}/events/{id}`: audit pencatatan transaksi, pembayaran dan perubahan status; hanya Functions yang dapat menulis.
-- `storeNames/{hash}`: penanda nama yang dinormalisasi untuk pemeriksaan duplikat.
-
-Premium hanya dapat diubah backend/admin. Nama toko sama tidak memberikan akses ke toko lain. Nama toko belum dapat diubah agar indeks duplikat konsisten. Owner dapat mengedit layanan; karyawan dapat melihat/mengekspor layanan dan mengelola konsumen. Impor bersifat tambah, maksimal 450 baris per file, divalidasi seluruhnya sebelum batch atomik. Impor file yang sama dua kali akan menambahkan duplikat setelah konfirmasi.
-
-## Setelah Blaze diaktifkan (opsional, ditunda)
-
-```powershell
-firebase deploy --only functions --project yuk-kasir-laundry
-```
-
-Jangan mengaktifkan billing tanpa keputusan pemilik project. Bluetooth ESC/POS, cetak label, pemrosesan pembayaran otomatis, promo/pajak, pemindahan owner, dan penghapusan karyawan/toko belum termasuk tahap ini. Pencatatan pembayaran manual dan pencetakan nota melalui printer sistem sudah tersedia.
-
-Referensi setup: https://firebase.google.com/docs/flutter/setup dan https://firebase.google.com/docs/auth/flutter/federated-auth
-
-## Hasil verifikasi 5 November 2026
-
-- `flutter analyze`: tanpa issue.
-- `flutter test`: 4 tes Excel/nota lulus.
-- Firestore Emulator: 7 tes aturan akses lulus.
-- Auth + Firestore + Functions Emulator: pendaftaran profil, penolakan pembuatan toko oleh karyawan, konfirmasi nama duplikat, undangan email terverifikasi, sinkronisasi dan idempotensi lulus.
-- `flutter build apk --debug`: berhasil. APK: `build/app/outputs/flutter-apk/app-debug.apk`.
-- Belum diuji pada perangkat Android/iOS fisik, printer fisik, atau login Google produksi.
-
-Tes integrasi backend dapat diulang dengan:
-
-```powershell
-firebase emulators:exec --only auth,firestore,functions --project demo-yuk-kasir "node functions/integration.cjs"
-```
-
-APK default menggunakan Firebase online; profil/toko tetap menunggu Functions aktif. Untuk seluruh flow lokal, jalankan/build dengan `--dart-define=USE_EMULATORS=true` dan hidupkan emulator Firebase. Pada Windows, bila Java default versi 17, arahkan JAVA_HOME/PATH ke JBR Android Studio (Java 21+) untuk Firebase Emulator.
-
-Tes integrasi transaksi mencakup total Rp39.000 sesuai video, harga otoritatif server, minimum order, akses anggota, tiga tipe pembayaran, idempotensi pembayaran, transisi status, dan pengambilan setelah lunas. Perubahan transaksi tahap ini belum dideploy ke Firebase online.
+Verifikasi migrasi Spark: 12 tes Security Rules lulus (termasuk batch 450 layanan), 4 tes Flutter lulus, `flutter analyze` tanpa issue, dan APK debug cloud berhasil dibangun. Rules telah dideploy ke `yuk-kasir-laundry`. Login pada perangkat/cloud belum diuji memakai akun pengguna.

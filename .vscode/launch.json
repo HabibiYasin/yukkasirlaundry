@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Yuk Kasir Laundry - Cloud (Spark)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug"
+    },
+    {
+      "name": "Yuk Kasir Laundry - Lokal (opsional)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "toolArgs": ["--dart-define=USE_EMULATORS=true"],
+      "preLaunchTask": "Firebase Emulator"
+    }
+  ]
+}

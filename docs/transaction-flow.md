@@ -19,15 +19,15 @@ Contoh yang terlihat: Cuci Lipat 2 Jam, 3 KG x Rp7.000 = Rp21.000; Cuci Lipat 6 
 
 - Pemilihan konsumen atau tambah konsumen; pemilihan beberapa layanan; edit/hapus item; catatan item/transaksi; keranjang; ketiga tipe pembayaran.
 - Metode Tunai dan Transfer dicatat manual. Aplikasi tidak menginisiasi transfer bank.
-- Harga, minimum reguler, total, snapshot konsumen/layanan/toko, dan estimasi dihitung/ditetapkan server. Perubahan harga sebelum checkout ditolak agar pengguna meninjau ulang.
+- Harga, minimum reguler, total, snapshot konsumen/layanan/toko, dan estimasi dihitung aplikasi dan diverifikasi Security Rules. Perubahan harga sebelum checkout ditolak agar pengguna meninjau ulang.
 - Pengulangan request simpan/pembayaran tidak menggandakan transaksi/pembayaran.
 - Nota ditampilkan, dicetak melalui PDF/printer sistem, atau dibagikan melalui share sheet. Pengguna sendiri memilih WhatsApp dan penerima.
 - Proses yang disetujui pengguna: Baru > Diproses > Siap diambil > Diambil. Pengambilan mensyaratkan saldo tagihan nol. Riwayat perubahan dan pembayaran disimpan.
-- Backend tetap Cloud Functions lokal/emulator; Blaze tidak diaktifkan. Tidak ada deploy baru pada tahap ini.
+- Backend memakai Firebase Auth + Firestore cloud pada paket Spark, tanpa Cloud Functions. Maksimal 4 baris layanan per transaksi agar validasi tetap aman dalam batas Security Rules.
 
 ## Belum ditentukan / belum diimplementasikan
 
-- Video tidak memperlihatkan konfigurasi promo/kupon, pajak/biaya tambahan, pengantaran, express, parfum, dan spesifikasi barang. Aturannya menunggu penjelasan pengguna.
+- Promo dan pajak tidak diperlukan sesuai konfirmasi pengguna. Pengantaran, express, parfum, dan spesifikasi barang belum ditentukan.
 - Cetak label dan integrasi printer Bluetooth ESC/POS belum diimplementasikan.
 - Proses produksi/pengambilan tidak diperlihatkan di video; status di atas dikonfirmasi pengguna secara terpisah dari video.
 - Pembatalan/refund, koreksi transaksi setelah disimpan, diskon khusus, produk nonlayanan, dan deposit saldo pelanggan belum termasuk.

@@ -497,6 +497,16 @@ class _HomeShellState extends State<HomeShell> {
   Widget settings(BuildContext c) => ListView(
     padding: const EdgeInsets.all(20),
     children: [
+      const ListTile(
+        leading: Icon(Icons.cloud_outlined),
+        title: Text('Penyimpanan data'),
+        subtitle: Text(
+          bool.fromEnvironment('USE_EMULATORS')
+              ? 'Mode uji lokal (bukan cloud)'
+              : 'Firebase cloud ? paket Spark',
+        ),
+      ),
+
       Card(
         child: ListTile(
           leading: const CircleAvatar(child: Icon(Icons.person)),
@@ -543,7 +553,10 @@ class _HomeShellState extends State<HomeShell> {
                 pageFormat: PdfPageFormat.a6,
                 build: (_) => pw.Column(
                   children: [
-                    pw.Text('YUK KASIR', style: pw.TextStyle(fontSize: 22)),
+                    pw.Text(
+                      'YUK KASIR LAUNDRY',
+                      style: pw.TextStyle(fontSize: 22),
+                    ),
                     pw.SizedBox(height: 20),
                     pw.Text('Tes cetak berhasil'),
                     pw.Text(widget.profile['name']),
@@ -562,7 +575,7 @@ class _HomeShellState extends State<HomeShell> {
         title: const Text('Tentang'),
         onTap: () => showAboutDialog(
           context: c,
-          applicationName: 'Yuk Kasir',
+          applicationName: 'Yuk Kasir Laundry',
           applicationVersion: '0.1.0',
           children: [
             const Text(

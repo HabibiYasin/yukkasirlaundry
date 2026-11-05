@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -24,7 +23,19 @@ void main() async {
       await auth.useAuthEmulator(host, 9099);
       db.useFirestoreEmulator(host, 8080);
       db.settings = const Settings(persistenceEnabled: false);
-      FirebaseFunctions.instance.useFunctionsEmulator(host, 5001);
+    } else if (auth.currentUser != null) {
+      try {
+        await auth.currentUser!.reload();
+      } on FirebaseAuthException catch (e) {
+        if ([
+          'user-not-found',
+          'invalid-user-token',
+          'user-token-expired',
+          'invalid-credential',
+        ].contains(e.code)) {
+          await auth.signOut();
+        }
+      }
     }
   } catch (e) {
     failure = e;
@@ -37,7 +48,7 @@ class YukKasirApp extends StatelessWidget {
   final Object? failure;
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'Yuk Kasir',
+    title: 'Yuk Kasir Laundry',
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       useMaterial3: true,
@@ -74,6 +85,15 @@ class YukKasirApp extends StatelessWidget {
                 builder: (c, p) {
                   if (p.hasError) {
                     return Scaffold(
+                      appBar: AppBar(
+                        title: const Text('Akun'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => auth.signOut(),
+                            child: const Text('Masuk ulang'),
+                          ),
+                        ],
+                      ),
                       body: Center(child: Text(errorText(p.error!))),
                     );
                   }
@@ -159,7 +179,7 @@ class _LoginState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  'Yuk Kasir',
+                  'Yuk Kasir Laundry',
                   textAlign: TextAlign.center,
                   style: Theme.of(c).textTheme.headlineLarge,
                 ),

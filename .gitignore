@@ -47,7 +47,7 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
-functions/node_modules/
+firestore_tests/node_modules/
 *-debug.log
 *-deploy.log
 .firebase/
@@ -55,7 +55,7 @@ functions/node_modules/
 *-test.log
 build-apk.log
 dependency-fix.log
-functions/audit-production.json
+firestore_tests/audit-production.json
 
 # Local secrets and duplicate downloads
 .env

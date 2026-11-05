@@ -1,4 +1,3 @@
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -86,6 +85,13 @@ class _CreateOrderState extends State<CreateOrderPage> {
   }
 
   Future<void> lineDialog(String id, List<dynamic> values, {int? index}) async {
+    if (index == null && lines.length >= maxOrderLines) {
+      message(
+        context,
+        'Maksimal $maxOrderLines layanan per transaksi. Buat transaksi berikutnya untuk layanan tambahan.',
+      );
+      return;
+    }
     final old = index == null ? null : lines[index];
     final v = await form(
       context,
@@ -610,7 +616,10 @@ class _OrderDetailState extends State<OrderDetailPage> {
       });
       pending = null;
     } catch (e) {
-      if (e is FirebaseFunctionsException &&
+      if (e is FormatException) {
+        pending = null;
+      }
+      if (e is FirebaseException &&
           ![
             'unavailable',
             'deadline-exceeded',

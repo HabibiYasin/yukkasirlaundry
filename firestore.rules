@@ -2,20 +2,102 @@ rules_version = '2';
 service cloud.firestore {
  match /databases/{database}/documents {
   function signed(){return request.auth != null;}
-  function member(s){return signed() && request.auth.uid in get(/databases/$(database)/documents/stores/$(s)).data.memberIds;}
-  function owner(s){return signed() && get(/databases/$(database)/documents/stores/$(s)).data.ownerId == request.auth.uid;}
-  match /users/{uid} {
-   allow read: if signed() && request.auth.uid == uid;
-   allow update: if signed() && request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','phone','printerWidth']) && request.resource.data.name is string && request.resource.data.phone is string;
+  function uid(){return request.auth.uid;}
+  function verified(){return signed() && request.auth.token.email_verified == true;}
+  function email(){return request.auth.token.email.lower();}
+  function hash(v){return hashing.sha256(v).toBase64().replace('/', '_').replace('[+]', '-');}
+  function inviteId(s){return hash(s + ':' + email());}
+  function store(s){return get(/databases/$(database)/documents/stores/$(s)).data;}
+  function storeAfter(s){return getAfter(/databases/$(database)/documents/stores/$(s)).data;}
+  function member(s){return signed() && uid() in store(s).memberIds;}
+  function owner(s){return signed() && store(s).ownerId == uid();}
+  function invited(s){return verified() && get(/databases/$(database)/documents/invitations/$(inviteId(s))).data.status == 'pending';}
+  function accepted(s){let i=getAfter(/databases/$(database)/documents/invitations/$(inviteId(s))).data;return verified() && i.storeId==s && i.email==email() && i.status=='accepted' && i.uid==uid();}
+  function short(v,n){return v is string && v.size()<=n;}
+  function nonempty(v,n){return short(v,n) && v.size()>0;}
+  function nonnegative(v){return v is number && v>=0 && v<=1000000000;}
+  function money(v){return v is int && v>=0 && v<=1000000000;}
+  function payStatus(p,t){return p==t?'Lunas':p==0?'Belum lunas':'DP';}
+  function validProfile(d){return nonempty(d.name,100) && nonempty(d.phone,40);}
+  match /users/{userId} {
+   allow read: if signed() && uid()==userId;
+   allow create: if signed() && uid()==userId && request.resource.data.keys().hasOnly(['id','name','phone','email','role','premium','storeIds','createdAt']) && request.resource.data.id==uid() && request.resource.data.email==request.auth.token.email && request.resource.data.role in ['Owner','Karyawan'] && request.resource.data.premium==false && request.resource.data.storeIds==[] && request.resource.data.createdAt==request.time && validProfile(request.resource.data);
+   allow update: if signed() && uid()==userId && validProfile(request.resource.data) && (
+    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','phone','printerWidth']) ||
+    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['storeIds','lastStoreId']) && request.resource.data.storeIds.toSet()==resource.data.storeIds.toSet().union([request.resource.data.lastStoreId].toSet()) && request.resource.data.storeIds.size()==request.resource.data.storeIds.toSet().size() && uid() in storeAfter(request.resource.data.lastStoreId).memberIds)
+   );
+  }
+  match /storeNames/{key} {
+   allow get: if signed();
+   allow create: if signed() && request.resource.data.keys().hasOnly(['storeId']) && storeAfter(request.resource.data.storeId).ownerId==uid() && storeAfter(request.resource.data.storeId).nameKey==key;
+  }
+  match /invitations/{invId} {
+   allow get: if signed() && (resource==null || owner(resource.data.storeId) || (verified() && resource.data.email==email()));
+   allow list: if signed() && (owner(resource.data.storeId) || (verified() && resource.data.email==email()));
+   allow create: if owner(request.resource.data.storeId) && request.resource.data.keys().hasOnly(['storeId','email','name','createdBy','status','createdAt']) && short(request.resource.data.email,254) && request.resource.data.email.matches('[^ @]+@[^ @]+[.][^ @]+') && request.resource.data.email==request.resource.data.email.lower() && invId==hash(request.resource.data.storeId+':'+request.resource.data.email) && request.resource.data.createdBy==uid() && request.resource.data.status=='pending' && request.resource.data.createdAt==request.time && short(request.resource.data.name,100);
+   allow update: if verified() && resource.data.email==email() && resource.data.status=='pending' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','uid']) && request.resource.data.status=='accepted' && request.resource.data.uid==uid() && uid() in storeAfter(resource.data.storeId).memberIds;
   }
   match /stores/{sid} {
-   allow read: if signed() && request.auth.uid in resource.data.memberIds;
-   allow update: if owner(sid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','phone','city','address']) && request.resource.data.name == resource.data.name;
-   match /orders/{id} {allow read: if member(sid); match /events/{eventId} {allow read: if member(sid);}}
-   match /members/{id} {allow read: if member(sid);}
-   match /services/{id} {allow read: if member(sid); allow create,update: if owner(sid) && request.resource.data.values is list && request.resource.data.values.size() == 19; allow delete: if owner(sid);}
-   match /customers/{id} {allow read: if member(sid); allow create,update: if member(sid) && request.resource.data.keys().hasOnly(['name','phone','address']) && request.resource.data.name is string && request.resource.data.name.size()>0 && request.resource.data.phone is string; allow delete: if owner(sid);}
+   allow get: if signed() && (uid() in resource.data.memberIds || invited(sid));
+   allow list: if signed() && uid() in resource.data.memberIds;
+   allow create: if signed() && get(/databases/$(database)/documents/users/$(uid())).data.role=='Owner' && request.resource.data.keys().hasOnly(['name','nameKey','duplicateConfirmed','phone','city','address','ownerId','memberIds','createdAt']) && nonempty(request.resource.data.name,100) && short(request.resource.data.phone,40) && short(request.resource.data.city,100) && short(request.resource.data.address,1000) && request.resource.data.ownerId==uid() && request.resource.data.memberIds==[uid()] && request.resource.data.createdAt==request.time && request.resource.data.nameKey==hash(request.resource.data.name.trim().lower().replace('\\s+',' ')) && (getAfter(/databases/$(database)/documents/storeNames/$(request.resource.data.nameKey)).data.storeId==sid || (request.resource.data.duplicateConfirmed==true && exists(/databases/$(database)/documents/storeNames/$(request.resource.data.nameKey))));
+   allow update: if (owner(sid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['phone','city','address']) && short(request.resource.data.phone,40) && short(request.resource.data.city,100) && short(request.resource.data.address,1000)) ||
+    (signed() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds']) && request.resource.data.memberIds.toSet()==resource.data.memberIds.toSet().union([uid()].toSet()) && request.resource.data.memberIds.size()==request.resource.data.memberIds.toSet().size() && invited(sid) && accepted(sid));
+   match /members/{memberId} {
+    allow read: if member(sid);
+    allow create,update: if signed() && uid()==memberId && uid() in storeAfter(sid).memberIds && request.resource.data.keys().hasOnly(['uid','name','email','role']) && request.resource.data.uid==uid() && request.resource.data.name==get(/databases/$(database)/documents/users/$(uid())).data.name && request.resource.data.email==get(/databases/$(database)/documents/users/$(uid())).data.email && request.resource.data.role==(storeAfter(sid).ownerId==uid()?'Owner':'Karyawan');
+   }
+   match /services/{serviceId} {
+    allow read: if member(sid);
+    allow create,update: if owner(sid) && request.resource.data.keys().hasOnly(['values']) && validService(request.resource.data.values);
+    allow delete: if owner(sid);
+   }
+   match /customers/{customerId} {
+    allow read: if member(sid);
+    allow create,update: if member(sid) && request.resource.data.keys().hasOnly(['name','phone','address']) && nonempty(request.resource.data.name,100) && nonempty(request.resource.data.phone,40) && short(request.resource.data.address,1000);
+    allow delete: if owner(sid);
+   }
+   match /orders/{orderId} {
+    allow read: if member(sid);
+    allow create: if member(sid) && validOrder(sid,orderId,request.resource.data);
+    allow update: if member(sid) && validOrderUpdate(sid,orderId,resource.data,request.resource.data);
+    match /events/{eventId} {
+     allow read: if member(sid);
+     allow create: if member(sid) && request.resource.data.at==request.time && request.resource.data.uid==uid() && getAfter(/databases/$(database)/documents/stores/$(sid)/orders/$(orderId)).data.lastEventId==eventId &&
+      ((eventId=='created' && request.resource.data.type=='created' && !exists(/databases/$(database)/documents/stores/$(sid)/orders/$(orderId))) ||
+       (eventId!='created' && get(/databases/$(database)/documents/stores/$(sid)/orders/$(orderId)).data.lastEventId!=eventId));
+    }
+   }
   }
-  match /invitations/{id} {allow read: if owner(resource.data.storeId);}
+  function validService(v){return v is list && v.size()==19 && nonempty(v[0],200) && nonempty(v[1],40) && short(v[7],1000) && nonnegative(v[2]) && nonnegative(v[3]) && v[2]%1==0 && v[3]%1==0 && v[2]*24+v[3]<=8760 && nonnegative(v[4]) && nonnegative(v[5]) && nonnegative(v[6]) && nonnegative(v[8]) && nonnegative(v[9]) && nonnegative(v[10]) && nonnegative(v[11]) && nonnegative(v[12]) && nonnegative(v[13]) && nonnegative(v[14]) && nonnegative(v[15]) && nonnegative(v[16]) && nonnegative(v[17]) && nonnegative(v[18]);}
+  function line(s,l){
+   let v=get(/databases/$(database)/documents/stores/$(s)/services/$(l.serviceId)).data.values;
+   let q=l.quantity;
+   let note=l.note;
+   return q>0 && q<=100000 && q>=v[5] && math.abs(q*100-math.round(q*100))<0.00001 && short(note,1000) && l.durationHours is int
+    && l=={'serviceId':l.serviceId,'name':v[0],'unit':v[1],'price':v[4],'quantity':q,'amount':math.round(q*v[4]),'note':note,'durationHours':v[2]*24+v[3]};
+  }
+  function amountAt(ls,i){return ls.size()<=i?0:ls[i].amount;}
+  function customerSnapshot(s,c){let actual=get(/databases/$(database)/documents/stores/$(s)/customers/$(c.id)).data;return c.keys().hasOnly(['id','name','phone','address']) && c.name==actual.name && c.phone==actual.phone && c.address==actual.address;}
+  function createdEvent(s,id,d){let e=getAfter(/databases/$(database)/documents/stores/$(s)/orders/$(id)/events/created).data;return e.keys().hasOnly(['type','uid','at','paid','method']) && e.type=='created' && e.uid==uid() && e.at==request.time && e.paid==d.paid && e.method==d.paymentMethod;}
+  function validOrder(s,id,d){
+   let ls=d.lines;
+   let st=store(s);
+   return d.keys().hasOnly(['number','store','customer','lines','total','paid','balance','paymentType','paymentMethod','paymentStatus','status','note','createdAt','dueAt','createdBy','lastEventId'])
+    && d.number=='YK-'+id && d.createdBy==uid() && d.lastEventId=='created' && d.status=='Baru' && short(d.note,1000)
+    && d.store=={'name':st.name,'address':st.address,'phone':st.phone} && customerSnapshot(s,d.customer)
+    && d.createdAt is timestamp && d.createdAt>=request.time-duration.value(5,'m') && d.createdAt<=request.time+duration.value(1,'m')
+    && ls is list && ls.size()>0 && ls.size()<=4
+    && line(s,ls[0]) && (ls.size()<2 || (ls[1].durationHours<=ls[0].durationHours && line(s,ls[1]))) && (ls.size()<3 || (ls[2].durationHours<=ls[0].durationHours && line(s,ls[2]))) && (ls.size()<4 || (ls[3].durationHours<=ls[0].durationHours && line(s,ls[3])))
+    && d.dueAt==d.createdAt+duration.value(ls[0].durationHours,'h')
+    && money(d.total) && d.total==amountAt(ls,0)+amountAt(ls,1)+amountAt(ls,2)+amountAt(ls,3)
+    && money(d.paid) && d.paid<=d.total && d.balance==d.total-d.paid && d.paymentStatus==payStatus(d.paid,d.total)
+    && ((d.paymentType=='paid' && d.paid==d.total)||(d.paymentType=='pickup' && d.paid==0)||(d.paymentType=='deposit' && d.paid>0 && d.paid<d.total))
+    && (d.paid==0?d.paymentMethod=='':d.paymentMethod in ['Tunai','Transfer']) && createdEvent(s,id,d);
+  }
+  function validOrderUpdate(s,id,old,d){let e=getAfter(/databases/$(database)/documents/stores/$(s)/orders/$(id)/events/$(d.lastEventId)).data;return d.lastEventId!=old.lastEventId && !exists(/databases/$(database)/documents/stores/$(s)/orders/$(id)/events/$(d.lastEventId)) && d.updatedAt==request.time && e.uid==uid() && e.at==request.time && (
+   (d.diff(old).affectedKeys().hasOnly(['paid','balance','paymentStatus','lastEventId','updatedAt']) && e.keys().hasOnly(['type','uid','at','amount','method']) && e.type=='payment' && e.method in ['Tunai','Transfer'] && e.amount is int && e.amount>0 && e.amount<=old.balance && d.paid==old.paid+e.amount && d.balance==old.total-d.paid && d.paymentStatus==payStatus(d.paid,old.total)) ||
+   (d.diff(old).affectedKeys().hasOnly(['status','lastEventId','updatedAt']) && e.keys().hasOnly(['type','uid','at','from','to']) && e.type=='status' && e.from==old.status && e.to==d.status && ((old.status=='Baru' && d.status=='Diproses')||(old.status=='Diproses' && d.status=='Siap diambil')||(old.status=='Siap diambil' && d.status=='Diambil' && old.balance==0)))
+  );}
  }
 }
