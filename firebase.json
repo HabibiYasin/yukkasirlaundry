@@ -1,0 +1,30 @@
+{
+  "functions": { "source": "functions" },
+  "firestore": { "rules": "firestore.rules" },
+  "emulators": {
+    "auth": { "port": 9099 },
+    "firestore": { "port": 8080 },
+    "functions": { "port": 5001 },
+    "ui": { "enabled": true }
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "yuk-kasir-laundry",
+          "appId": "1:905633135303:android:626d9c3ded99b300a99ce2",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "yuk-kasir-laundry",
+          "configurations": {
+            "android": "1:905633135303:android:626d9c3ded99b300a99ce2",
+            "ios": "1:905633135303:ios:ad129ea3441107f9a99ce2"
+          }
+        }
+      }
+    }
+  }
+}

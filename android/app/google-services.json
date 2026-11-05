@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "905633135303",
+    "project_id": "yuk-kasir-laundry",
+    "storage_bucket": "yuk-kasir-laundry.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:905633135303:android:626d9c3ded99b300a99ce2",
+        "android_client_info": {
+          "package_name": "com.yukkasir.yuk_kasir"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "905633135303-onsegveg6bjfcsu9be8mfl7iqnnq6efi.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.yukkasir.yuk_kasir",
+            "certificate_hash": "cef2006b3458f750db6646e1e2a0942fa6c9fb14"
+          }
+        },
+        {
+          "client_id": "905633135303-brmem7ik2un3fqce14aj86d0g3n89beq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDJ85nd9UhjXWdTzq-aNSOlc2_F6VpD2Kk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "905633135303-brmem7ik2un3fqce14aj86d0g3n89beq.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "905633135303-pat7a3k30ilk94r7gpvbqarfh9uj5c6c.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.yukkasir.yukKasir"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
