@@ -333,7 +333,7 @@ class _CreateOrderState extends State<CreateOrderPage> {
       Expanded(
         child: Records(
           query: items(widget.store, 'services'),
-          empty: 'Tambahkan layanan melalui menu Toko terlebih dahulu.',
+          empty: 'Tambahkan layanan melalui Pengaturan > Toko terlebih dahulu.',
           builder: (docs) => ListView(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             children: [

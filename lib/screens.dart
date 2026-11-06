@@ -1,3 +1,5 @@
+import 'transaction_recap.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_native_contact_picker/flutter_native_contact_picker.dart';
 
@@ -161,6 +163,8 @@ class Records extends StatelessWidget {
   @override
   Widget build(BuildContext c) =>
       StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        // A different query must not render the previous collection's snapshot.
+        key: ValueKey(query),
         stream: query.snapshots(),
         builder: (c, s) {
           if (s.hasError) {
@@ -197,6 +201,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
+    selected = widget.profile['lastStoreId'] as String?;
     sync();
   }
 
@@ -216,7 +221,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext c) => Scaffold(
     appBar: AppBar(
-      title: Text(['Beranda', 'Konsumen', 'Toko', 'Pengaturan'][tab]),
+      title: Text(['Beranda', 'Konsumen', 'Transaksi', 'Pengaturan'][tab]),
       actions: [
         IconButton(
           onPressed: syncing ? null : sync,
@@ -239,8 +244,8 @@ class _HomeShellState extends State<HomeShell> {
           label: 'Konsumen',
         ),
         NavigationDestination(
-          icon: Icon(Icons.storefront_outlined),
-          label: 'Toko',
+          icon: Icon(Icons.receipt_long_outlined),
+          label: 'Transaksi',
         ),
         NavigationDestination(
           icon: Icon(Icons.settings_outlined),
@@ -287,29 +292,6 @@ class _HomeShellState extends State<HomeShell> {
                   ),
                 ],
               ),
-            if (stores.isNotEmpty && tab != 2 && tab != 3)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                child: DropdownButtonFormField<String>(
-                  initialValue: id,
-                  decoration: const InputDecoration(
-                    labelText: 'Toko aktif',
-                    prefixIcon: Icon(Icons.storefront),
-                  ),
-                  items: stores
-                      .map(
-                        (d) => DropdownMenuItem(
-                          value: d.id,
-                          child: Text(
-                            d.data()['name'],
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) => setState(() => selected = v),
-                ),
-              ),
             Expanded(
               child: switch (tab) {
                 0 => home(c, current),
@@ -320,8 +302,17 @@ class _HomeShellState extends State<HomeShell> {
                             'Tambahkan toko atau tunggu undangan owner.',
                           ),
                         )
-                      : CustomerPage(store: id),
-                2 => storeList(c, stores),
+                      : CustomerPage(key: ValueKey(id), store: id),
+                2 =>
+                  id == null
+                      ? const Center(
+                          child: Text('Tambahkan toko di Pengaturan > Toko.'),
+                        )
+                      : TransactionRecapPage(
+                          key: ValueKey(id),
+                          store: id,
+                          embedded: true,
+                        ),
                 _ => settings(c),
               },
             ),
@@ -397,7 +388,7 @@ class _HomeShellState extends State<HomeShell> {
           child: Padding(
             padding: EdgeInsets.all(24),
             child: Text(
-              'Mulai dengan menambahkan toko di menu Toko. Untuk karyawan, toko muncul setelah email diundang owner.',
+              'Mulai dengan menambahkan toko di Pengaturan > Toko. Untuk karyawan, toko muncul setelah email diundang owner.',
             ),
           ),
         )
@@ -520,9 +511,90 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
+  Future<void> openStores(BuildContext context) => Navigator.push<void>(
+    context,
+    MaterialPageRoute(
+      builder: (context) => StatefulBuilder(
+        builder: (context, refresh) => Scaffold(
+          appBar: AppBar(title: const Text('Toko')),
+          body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: db
+                .collection('stores')
+                .where('memberIds', arrayContains: auth.currentUser!.uid)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(child: Text(errorText(snapshot.error!)));
+              }
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final stores = snapshot.data!.docs;
+              final active =
+                  stores.where((d) => d.id == selected).firstOrNull ??
+                  stores.firstOrNull;
+              return Column(
+                children: [
+                  if (active != null)
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: DropdownButtonFormField<String>(
+                        key: ValueKey(active.id),
+                        initialValue: active.id,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Toko aktif',
+                        ),
+                        items: stores
+                            .map(
+                              (d) => DropdownMenuItem(
+                                value: d.id,
+                                child: Text(
+                                  d.data()['name'],
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (id) async {
+                          if (id == null) return;
+                          try {
+                            await db
+                                .collection('users')
+                                .doc(auth.currentUser!.uid)
+                                .update({'lastStoreId': id});
+                            if (!mounted || !context.mounted) return;
+                            setState(() => selected = id);
+                            refresh(() {});
+                          } catch (e) {
+                            if (context.mounted) {
+                              refresh(() {});
+                              message(context, errorText(e));
+                            }
+                          }
+                        },
+                      ),
+                    ),
+                  Expanded(child: storeList(context, stores)),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    ),
+  );
+
   Widget settings(BuildContext c) => ListView(
     padding: const EdgeInsets.all(20),
     children: [
+      ListTile(
+        leading: const Icon(Icons.storefront_outlined),
+        title: const Text('Toko'),
+        subtitle: const Text('Pilih toko aktif dan kelola toko'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => openStores(c),
+      ),
       Card(
         child: ListTile(
           leading: const CircleAvatar(child: Icon(Icons.person)),

@@ -1,3 +1,5 @@
+import 'weekly_chart.dart';
+
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -5,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import 'data.dart';
 import 'orders.dart' show rupiah;
+import 'transaction_recap.dart';
 
 bool inMonth(dynamic value, DateTime now) {
   if (value is! Timestamp) return false;
@@ -16,12 +19,24 @@ bool inMonth(dynamic value, DateTime now) {
 ({int transactions, int pending, int overdue, num income}) summarizeStore(
   Iterable<Map<String, dynamic>> orders,
   Iterable<Map<String, dynamic>> events,
-  DateTime now,
-) {
+  DateTime now, {
+  DateTime? month,
+  bool daily = false,
+}) {
+  final period = month ?? now;
+  bool included(dynamic value) {
+    if (!daily) return inMonth(value, period);
+    if (value is! Timestamp) return false;
+    final date = value.toDate();
+    return date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day;
+  }
+
   int transactions = 0, pending = 0, overdue = 0;
   num income = 0;
   for (final order in orders) {
-    if (!inMonth(order['createdAt'], now)) continue;
+    if (!included(order['createdAt'])) continue;
     transactions++;
     if (order['status'] == 'Baru') pending++;
     final due = order['dueAt'];
@@ -32,7 +47,7 @@ bool inMonth(dynamic value, DateTime now) {
     }
   }
   for (final event in events) {
-    if (!inMonth(event['at'], now)) continue;
+    if (!included(event['at'])) continue;
     if (event['type'] == 'created') income += (event['paid'] as num?) ?? 0;
     if (event['type'] == 'payment') income += (event['amount'] as num?) ?? 0;
   }
@@ -45,8 +60,15 @@ bool inMonth(dynamic value, DateTime now) {
 }
 
 class StoreSummary extends StatefulWidget {
-  const StoreSummary({super.key, required this.store});
+  const StoreSummary({
+    super.key,
+    required this.store,
+    this.weekly = false,
+    this.month,
+  });
   final String store;
+  final bool weekly;
+  final DateTime? month;
   @override
   State<StoreSummary> createState() => _StoreSummaryState();
 }
@@ -138,46 +160,152 @@ class _StoreSummaryState extends State<StoreSummary> {
     if (!loaded || events.length < payments.length) {
       return const Center(child: CircularProgressIndicator());
     }
-    final summary = summarizeStore(
-      orders,
-      events.values.expand((e) => e),
-      DateTime.now(),
-    );
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Bulan ini', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            ListTile(
-              leading: const Icon(Icons.receipt_long),
-              title: const Text('Transaksi'),
-              trailing: Text('${summary.transactions}'),
+    final now = DateTime.now();
+    final paymentEvents = events.values.expand((e) => e).toList();
+    final daily = summarizeStore(orders, paymentEvents, now, daily: true);
+    if (widget.weekly) {
+      return Column(
+        children: [
+          WeeklyCharts(orders: orders, events: paymentEvents, now: now),
+          CompactSummaryCard(
+            title: 'Ringkasan ${monthLabel(widget.month ?? now)}',
+            summary: summarizeStore(
+              orders,
+              paymentEvents,
+              now,
+              month: widget.month,
             ),
-            ListTile(
-              leading: const Icon(Icons.payments_outlined),
-              title: const Text('Uang masuk'),
-              subtitle: Text(rupiah(summary.income)),
-            ),
-            ListTile(
-              leading: const Icon(Icons.hourglass_empty),
-              title: const Text('Belum dikerjakan'),
-              trailing: Text('${summary.pending}'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.event_busy),
-              title: const Text('Lewat deadline'),
-              trailing: Text('${summary.overdue}'),
-            ),
-            const Text(
-              'Jumlah pesanan berdasarkan tanggal dibuat bulan ini. Uang masuk berdasarkan tanggal pembayaran. Deadline mengikuti tanggal dan jam selesai pesanan.',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-          ],
-        ),
-      ),
+          ),
+        ],
+      );
+    }
+    return CompactSummaryCard(
+      title: 'Transaksi Hari Ini',
+      subtitle: summaryDayLabel(now),
+      summary: daily,
     );
   }
+}
+
+String summaryDayLabel(DateTime date) {
+  const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+  return '${days[date.weekday - 1]}, ${date.day.toString().padLeft(2, '0')} ${monthNames[date.month - 1]} ${date.year}';
+}
+
+typedef StoreTotals = ({
+  int transactions,
+  int pending,
+  int overdue,
+  num income,
+});
+
+class CompactSummaryCard extends StatelessWidget {
+  const CompactSummaryCard({
+    super.key,
+    required this.title,
+    required this.summary,
+    this.subtitle,
+    this.selector,
+  });
+  final String title;
+  final String? subtitle;
+  final Widget? selector;
+  final StoreTotals summary;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              ?selector,
+            ],
+          ),
+          if (subtitle != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                subtitle!,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: metric(context, '${summary.transactions}', 'Transaksi'),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: metric(context, rupiah(summary.income), 'Uang masuk'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: metric(
+                  context,
+                  '${summary.overdue}',
+                  'Lewat deadline',
+                  alert: summary.overdue > 0,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: metric(
+                  context,
+                  '${summary.pending}',
+                  'Belum dikerjakan',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget metric(
+    BuildContext context,
+    String value,
+    String label, {
+    bool alert = false,
+  }) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: alert ? Theme.of(context).colorScheme.error : null,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    ),
+  );
 }
