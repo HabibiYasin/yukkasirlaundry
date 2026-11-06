@@ -1,7 +1,8 @@
 import 'dart:ui' as ui;
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
@@ -10,6 +11,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import 'data.dart';
+import 'whatsapp_receipt.dart';
 import 'screens.dart' show Records, form, message, confirm;
 
 String rupiah(num n) => NumberFormat.currency(
@@ -628,6 +630,16 @@ class _OrderDetailState extends State<OrderDetailPage> {
     if (asImage == null || !mounted) return;
     setState(() => sharing = true);
     try {
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        final phone = whatsappPhone(d['customer']?['phone']?.toString() ?? '');
+        final bytes = asImage ? await receiptImage(d) : null;
+        await WhatsappReceipt.send(
+          phone: phone,
+          text: receiptText(d),
+          image: bytes,
+        );
+        return;
+      }
       final box = context.findRenderObject() as RenderBox?;
       final origin = box == null
           ? null
@@ -644,6 +656,8 @@ class _OrderDetailState extends State<OrderDetailPage> {
           sharePositionOrigin: origin,
         ),
       );
+    } on PlatformException catch (e) {
+      if (mounted) message(context, e.message ?? 'Gagal membuka WhatsApp.');
     } catch (e) {
       if (mounted) message(context, errorText(e));
     } finally {
