@@ -1,3 +1,7 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_native_contact_picker/flutter_native_contact_picker.dart';
+
+import 'store_summary.dart';
 import 'orders.dart';
 
 import 'package:flutter/material.dart';
@@ -38,6 +42,7 @@ Future<Map<String, String>?> form(
   Map<String, String> values, {
   Set<String> requiredFields = const {},
   Set<String> numeric = const {},
+  bool fromContacts = false,
 }) async {
   final controllers = values.map(
     (k, v) => MapEntry(k, TextEditingController(text: v)),
@@ -87,6 +92,34 @@ Future<Map<String, String>?> form(
         ),
       ),
       actions: [
+        if (fromContacts &&
+            !kIsWeb &&
+            (defaultTargetPlatform == TargetPlatform.android ||
+                defaultTargetPlatform == TargetPlatform.iOS))
+          TextButton.icon(
+            icon: const Icon(Icons.contacts_outlined),
+            label: const Text('Ambil dari kontak'),
+            onPressed: () async {
+              try {
+                final contact = await FlutterNativeContactPicker()
+                    .selectPhoneNumber();
+                if (!c.mounted || contact == null) return;
+                controllers['Nama']?.text = contact.fullName ?? '';
+                controllers['Nomor HP']?.text =
+                    contact.selectedPhoneNumber ??
+                    (contact.phoneNumbers?.isNotEmpty == true
+                        ? contact.phoneNumbers!.first
+                        : '');
+              } catch (_) {
+                if (c.mounted) {
+                  message(
+                    c,
+                    'Kontak tidak dapat dibuka. Silakan isi secara manual.',
+                  );
+                }
+              }
+            },
+          ),
         TextButton(
           onPressed: () => Navigator.pop(c),
           child: const Text('Batal'),
@@ -374,14 +407,7 @@ class _HomeShellState extends State<HomeShell> {
           title: Text(store.data()['name']),
           subtitle: Text(store.data()['address'] ?? ''),
         ),
-        const Card(
-          child: Padding(
-            padding: EdgeInsets.all(20),
-            child: Text(
-              'Data layanan dan konsumen tersimpan per toko. Pilih toko aktif untuk beralih cabang.',
-            ),
-          ),
-        ),
+        StoreSummary(key: ValueKey(store.id), store: store.id),
       ],
       const SizedBox(height: 20),
       const Text(
@@ -497,16 +523,6 @@ class _HomeShellState extends State<HomeShell> {
   Widget settings(BuildContext c) => ListView(
     padding: const EdgeInsets.all(20),
     children: [
-      const ListTile(
-        leading: Icon(Icons.cloud_outlined),
-        title: Text('Penyimpanan data'),
-        subtitle: Text(
-          bool.fromEnvironment('USE_EMULATORS')
-              ? 'Mode uji lokal (bukan cloud)'
-              : 'Firebase cloud ? paket Spark',
-        ),
-      ),
-
       Card(
         child: ListTile(
           leading: const CircleAvatar(child: Icon(Icons.person)),
@@ -680,6 +696,7 @@ class _CustomerState extends State<CustomerPage> {
         'Nomor HP': d['phone'] ?? '',
         'Alamat': d['address'] ?? '',
       },
+      fromContacts: doc == null,
       requiredFields: {'Nama', 'Nomor HP'},
     );
     if (v == null) return;

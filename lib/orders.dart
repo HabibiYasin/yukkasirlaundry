@@ -1,3 +1,6 @@
+import 'dart:ui' as ui;
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -70,6 +73,7 @@ class _CreateOrderState extends State<CreateOrderPage> {
       context,
       'Tambah konsumen',
       {'Nama': '', 'Nomor HP': '', 'Alamat': ''},
+      fromContacts: true,
       requiredFields: {'Nama', 'Nomor HP'},
     );
     if (v == null) return;
@@ -603,7 +607,50 @@ class OrderDetailPage extends StatefulWidget {
 }
 
 class _OrderDetailState extends State<OrderDetailPage> {
-  bool busy = false;
+  bool busy = false, sharing = false;
+  Future<void> shareReceipt(Map<String, dynamic> d) async {
+    final asImage = await showDialog<bool>(
+      context: context,
+      builder: (c) => SimpleDialog(
+        title: const Text('Kirim nota sebagai'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(c, false),
+            child: const Text('Tulisan'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Gambar'),
+          ),
+        ],
+      ),
+    );
+    if (asImage == null || !mounted) return;
+    setState(() => sharing = true);
+    try {
+      final box = context.findRenderObject() as RenderBox?;
+      final origin = box == null
+          ? null
+          : box.localToGlobal(Offset.zero) & box.size;
+      final bytes = asImage ? await receiptImage(d) : null;
+      await SharePlus.instance.share(
+        ShareParams(
+          title: 'Nota ${d['number']}',
+          text: asImage ? null : receiptText(d),
+          files: bytes == null
+              ? null
+              : [XFile.fromData(bytes, mimeType: 'image/png')],
+          fileNameOverrides: bytes == null ? null : ['nota-${d['number']}.png'],
+          sharePositionOrigin: origin,
+        ),
+      );
+    } catch (e) {
+      if (mounted) message(context, errorText(e));
+    } finally {
+      if (mounted) setState(() => sharing = false);
+    }
+  }
+
   Map<String, dynamic>? pending;
   Future<void> mutate(Map<String, dynamic> data) async {
     setState(() => busy = true);
@@ -698,22 +745,7 @@ class _OrderDetailState extends State<OrderDetailPage> {
                   label: const Text('Cetak nota'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: () async {
-                    try {
-                      final box = c.findRenderObject() as RenderBox?;
-                      await SharePlus.instance.share(
-                        ShareParams(
-                          text: receiptText(d),
-                          title: 'Nota ${d['number']}',
-                          sharePositionOrigin: box == null
-                              ? null
-                              : box.localToGlobal(Offset.zero) & box.size,
-                        ),
-                      );
-                    } catch (e) {
-                      if (c.mounted) message(c, errorText(e));
-                    }
-                  },
+                  onPressed: sharing ? null : () => shareReceipt(d),
                   icon: const Icon(Icons.share_outlined),
                   label: const Text('Kirim nota'),
                 ),
@@ -824,4 +856,33 @@ class _OrderDetailState extends State<OrderDetailPage> {
       },
     ),
   );
+}
+
+Future<Uint8List> receiptImage(Map<String, dynamic> order) async {
+  final painter = TextPainter(
+    text: TextSpan(
+      text: receiptText(order),
+      style: const TextStyle(color: Colors.black, fontSize: 24, height: 1.5),
+    ),
+    textDirection: ui.TextDirection.ltr,
+  )..layout(maxWidth: 720);
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder);
+  final height = painter.height.ceil() + 80;
+  canvas.drawRect(
+    Rect.fromLTWH(0, 0, 800, height.toDouble()),
+    Paint()..color = Colors.white,
+  );
+  painter.paint(canvas, const Offset(40, 40));
+  final picture = recorder.endRecording();
+  final image = await picture.toImage(800, height);
+  try {
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (data == null) throw StateError('Gambar nota gagal dibuat.');
+    return data.buffer.asUint8List();
+  } finally {
+    image.dispose();
+    picture.dispose();
+    painter.dispose();
+  }
 }

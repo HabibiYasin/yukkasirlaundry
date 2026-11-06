@@ -45,6 +45,7 @@ dependencies:
   google_sign_in: ^7.2.0
   share_plus: ^12.0.2
   crypto: ^3.0.8
+  flutter_native_contact_picker: ^0.0.13
 
 dev_dependencies:
   flutter_test:
