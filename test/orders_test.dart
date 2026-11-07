@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:yuk_kasir/laundry_receipt.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:yuk_kasir/orders.dart';
@@ -50,8 +53,9 @@ void main() {
         'note': '',
       };
       final text = receiptText(data);
-      final png = await receiptImage(data);
-      expect(png.take(8), [137, 80, 78, 71, 13, 10, 26, 10]);
+      final pdf = await buildLaundryPdf(data);
+      expect(ascii.decode(pdf.take(5).toList()), '%PDF-');
+      expect(pdf.length, greaterThan(1000));
       expect(text, contains('Total: Rp 39.000'));
       expect(text, contains('Sisa tagihan: Rp 39.000'));
       expect(text, contains('20:17'));

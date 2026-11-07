@@ -1,3 +1,4 @@
+import 'laundry_logo.dart';
 import 'transaction_recap.dart';
 
 import 'package:flutter/foundation.dart';
@@ -852,6 +853,7 @@ class StorePage extends StatelessWidget {
                 },
                 child: const Text('Edit detail'),
               ),
+            LaundryLogoSetting(store: id),
             const Divider(),
             Card(
               child: ListTile(

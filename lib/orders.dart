@@ -1,3 +1,6 @@
+import 'laundry_logo.dart';
+import 'laundry_receipt.dart';
+
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -6,8 +9,6 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import 'data.dart';
@@ -611,28 +612,37 @@ class OrderDetailPage extends StatefulWidget {
 class _OrderDetailState extends State<OrderDetailPage> {
   bool busy = false, sharing = false;
   Future<void> shareReceipt(Map<String, dynamic> d) async {
-    final asImage = await showDialog<bool>(
+    final format = await showDialog<String>(
       context: context,
       builder: (c) => SimpleDialog(
         title: const Text('Kirim nota sebagai'),
         children: [
           SimpleDialogOption(
-            onPressed: () => Navigator.pop(c, false),
+            onPressed: () => Navigator.pop(c, 'text'),
             child: const Text('Tulisan'),
           ),
           SimpleDialogOption(
-            onPressed: () => Navigator.pop(c, true),
+            onPressed: () => Navigator.pop(c, 'image'),
             child: const Text('Gambar'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(c, 'pdf'),
+            child: const Text('PDF'),
           ),
         ],
       ),
     );
-    if (asImage == null || !mounted) return;
+    if (format == null || !mounted) return;
+    final asImage = format == 'image';
     setState(() => sharing = true);
     try {
-      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      if (format != 'pdf' &&
+          !kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.android) {
         final phone = whatsappPhone(d['customer']?['phone']?.toString() ?? '');
-        final bytes = asImage ? await receiptImage(d) : null;
+        final bytes = asImage
+            ? await receiptImage(d, logo: await LaundryLogo.load(widget.store))
+            : null;
         await WhatsappReceipt.send(
           phone: phone,
           text: receiptText(d),
@@ -644,15 +654,26 @@ class _OrderDetailState extends State<OrderDetailPage> {
       final origin = box == null
           ? null
           : box.localToGlobal(Offset.zero) & box.size;
-      final bytes = asImage ? await receiptImage(d) : null;
+      final bytes = format == 'pdf'
+          ? await buildLaundryPdf(d, logo: await LaundryLogo.load(widget.store))
+          : asImage
+          ? await receiptImage(d, logo: await LaundryLogo.load(widget.store))
+          : null;
       await SharePlus.instance.share(
         ShareParams(
           title: 'Nota ${d['number']}',
-          text: asImage ? null : receiptText(d),
+          text: format == 'text' ? receiptText(d) : null,
           files: bytes == null
               ? null
-              : [XFile.fromData(bytes, mimeType: 'image/png')],
-          fileNameOverrides: bytes == null ? null : ['nota-${d['number']}.png'],
+              : [
+                  XFile.fromData(
+                    bytes,
+                    mimeType: format == 'pdf' ? 'application/pdf' : 'image/png',
+                  ),
+                ],
+          fileNameOverrides: bytes == null
+              ? null
+              : ['nota-${d['number']}.${format == 'pdf' ? 'pdf' : 'png'}'],
           sharePositionOrigin: origin,
         ),
       );
@@ -697,19 +718,14 @@ class _OrderDetailState extends State<OrderDetailPage> {
 
   Future<void> printReceipt(Map<String, dynamic> d) async {
     try {
-      final pdf = pw.Document();
-      pdf.addPage(
-        pw.MultiPage(
-          pageFormat: PdfPageFormat.a5,
-          build: (_) => [
-            pw.Text(
-              receiptText(d).replaceAll('•', '-').replaceAll('×', 'x'),
-              style: const pw.TextStyle(fontSize: 11),
-            ),
-          ],
-        ),
+      final bytes = await buildLaundryPdf(
+        d,
+        logo: await LaundryLogo.load(widget.store),
       );
-      await Printing.layoutPdf(onLayout: (_) => pdf.save());
+      await Printing.layoutPdf(
+        name: 'nota-${d['number']}.pdf',
+        onLayout: (_) async => bytes,
+      );
     } catch (e) {
       if (mounted) message(context, errorText(e));
     }
@@ -747,7 +763,7 @@ class _OrderDetailState extends State<OrderDetailPage> {
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(20),
-                child: SelectableText(receiptText(d)),
+                child: LaundryReceiptPreview(order: d, store: widget.store),
               ),
             ),
             Wrap(
@@ -872,31 +888,99 @@ class _OrderDetailState extends State<OrderDetailPage> {
   );
 }
 
-Future<Uint8List> receiptImage(Map<String, dynamic> order) async {
-  final painter = TextPainter(
-    text: TextSpan(
-      text: receiptText(order),
-      style: const TextStyle(color: Colors.black, fontSize: 24, height: 1.5),
-    ),
-    textDirection: ui.TextDirection.ltr,
-  )..layout(maxWidth: 720);
-  final recorder = ui.PictureRecorder();
-  final canvas = Canvas(recorder);
-  final height = painter.height.ceil() + 80;
-  canvas.drawRect(
-    Rect.fromLTWH(0, 0, 800, height.toDouble()),
-    Paint()..color = Colors.white,
-  );
-  painter.paint(canvas, const Offset(40, 40));
-  final picture = recorder.endRecording();
-  final image = await picture.toImage(800, height);
+Future<Uint8List> receiptImage(
+  Map<String, dynamic> order, {
+  Uint8List? logo,
+}) async {
+  final bytes = await buildLaundryPdf(order, logo: logo);
+  final pages = await Printing.raster(bytes, dpi: 120).toList();
+  final images = <ui.Image>[];
   try {
-    final data = await image.toByteData(format: ui.ImageByteFormat.png);
-    if (data == null) throw StateError('Gambar nota gagal dibuat.');
-    return data.buffer.asUint8List();
+    for (final page in pages) {
+      images.add(await page.toImage());
+    }
+    final width = images.fold<int>(
+      0,
+      (w, image) => image.width > w ? image.width : w,
+    );
+    final height = images.fold<int>(0, (h, image) => h + image.height);
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    double top = 0;
+    for (final image in images) {
+      canvas.drawImage(image, Offset(0, top), Paint());
+      top += image.height;
+    }
+    final picture = recorder.endRecording();
+    final result = await picture.toImage(width, height);
+    try {
+      return (await result.toByteData(format: ui.ImageByteFormat.png))!.buffer
+          .asUint8List();
+    } finally {
+      result.dispose();
+      picture.dispose();
+    }
   } finally {
-    image.dispose();
-    picture.dispose();
-    painter.dispose();
+    for (final image in images) {
+      image.dispose();
+    }
   }
+}
+
+class LaundryReceiptPreview extends StatefulWidget {
+  const LaundryReceiptPreview({
+    super.key,
+    required this.order,
+    required this.store,
+  });
+  final Map<String, dynamic> order;
+  final String store;
+  @override
+  State<LaundryReceiptPreview> createState() => _LaundryReceiptPreviewState();
+}
+
+class _LaundryReceiptPreviewState extends State<LaundryReceiptPreview> {
+  late Future<Uint8List> preview;
+  Future<Uint8List> render() async =>
+      receiptImage(widget.order, logo: await LaundryLogo.load(widget.store));
+  @override
+  void initState() {
+    super.initState();
+    preview = render();
+  }
+
+  @override
+  void didUpdateWidget(covariant LaundryReceiptPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.order != widget.order || oldWidget.store != widget.store) {
+      preview = render();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<Uint8List>(
+    future: preview,
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return Column(
+          children: [
+            const Text('Pratinjau gagal dimuat.'),
+            TextButton(
+              onPressed: () => setState(() => preview = render()),
+              child: const Text('Coba lagi'),
+            ),
+            SelectableText(receiptText(widget.order)),
+          ],
+        );
+      }
+      if (!snapshot.hasData) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return Image.memory(
+        snapshot.data!,
+        width: double.infinity,
+        fit: BoxFit.contain,
+      );
+    },
+  );
 }
