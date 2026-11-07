@@ -906,6 +906,8 @@ Future<Uint8List> receiptImage(
     final height = images.fold<int>(0, (h, image) => h + image.height);
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
+    // PDF raster pages can be transparent; shared PNGs need opaque paper.
+    canvas.drawColor(Colors.white, BlendMode.src);
     double top = 0;
     for (final image in images) {
       canvas.drawImage(image, Offset(0, top), Paint());
