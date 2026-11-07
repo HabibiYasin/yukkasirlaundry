@@ -172,10 +172,11 @@ class _LoginState extends State<LoginPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(
-                  Icons.local_laundry_service_rounded,
-                  size: 78,
-                  color: Color(0xff24649a),
+                Image.asset(
+                  'asset/Centered Yuk Kasir logo on white.png',
+                  height: 160,
+                  fit: BoxFit.contain,
+                  semanticLabel: 'Logo Yuk Kasir',
                 ),
                 const SizedBox(height: 20),
                 Text(
